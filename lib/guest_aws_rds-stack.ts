@@ -9,137 +9,123 @@ export class GuestAwsRdsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 1. Configuración de VPC
+    // 1. VPC
     const vpc = ec2.Vpc.fromLookup(this, 'HuespedVpc', { vpcId: 'vpc-32a04b48' });
 
-    // Configuración común para todas las Lambdas
-    const lambdaCommonProps = {
+    // 2. Lambda consolidada
+    const crudGuestLambda = new lambda.Function(this, 'CrudGuestLambda', {
+      functionName: 'crudGuest',
       runtime: lambda.Runtime.NODEJS_18_X,
       code: lambda.Code.fromAsset('lambda'),
+      handler: 'crudGuest.handler',
       timeout: cdk.Duration.seconds(28),
       memorySize: 512,
       environment: {
         DB_HOST: 'guest-db.cdjwgh9lczq3.us-east-1.rds.amazonaws.com',
         DB_USER: 'admin',
         DB_PASSWORD: 'Emamysql07',
-        DB_NAME: 'guest_db'
+        DB_NAME: 'guest_db',
       },
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       allowPublicSubnet: true,
-    };
-
-    // 2. Lambda Functions
-    const createGuestLambda = new lambda.Function(this, 'CreateGuestLambda', {
-      ...lambdaCommonProps,
-      handler: 'createGuest.handler',
     });
 
-    const getGuestsLambda = new lambda.Function(this, 'GetGuestsLambda', {
-      ...lambdaCommonProps,
-      handler: 'getGuests.handler',
-    });
-
-    const getOneGuestLambda = new lambda.Function(this, 'GetOneGuestLambda', {
-      ...lambdaCommonProps,
-      handler: 'getOneGuest.handler',
-    });
-
-    const updateGuestLambda = new lambda.Function(this, 'UpdateGuestLambda', {
-      ...lambdaCommonProps,
-      handler: 'updateGuest.handler',
-    });
-
-    const deleteGuestLambda = new lambda.Function(this, 'DeleteGuestLambda', {
-      ...lambdaCommonProps,
-      handler: 'deleteGuest.handler',
-    });
-
-    // 3. Permisos adicionales para todas las Lambdas
-    const lambdaPolicy = new iam.PolicyStatement({
+    // Permisos para RDS y API Gateway
+    crudGuestLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ['rds-db:connect'],
       resources: ['*'],
-    });
+    }));
 
-    [createGuestLambda, getGuestsLambda, getOneGuestLambda, updateGuestLambda, deleteGuestLambda].forEach(lambda => {
-      lambda.addToRolePolicy(lambdaPolicy);
-    });
+    crudGuestLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: ['*'],
+    }));
 
-    // 4. API Gateway con CORS habilitado
+    // 3. API Gateway
     const api = new apigateway.RestApi(this, 'GuestApi', {
-      restApiName: 'guest-api',
+      restApiName: 'Guest Service API',
+      deployOptions: {
+        stageName: 'prod',
+      },
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: ['OPTIONS', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Requested-With'
-        ],
-        allowCredentials: true,
-        statusCode: 200,
+        allowMethods: ['OPTIONS', 'POST', 'GET', 'PUT', 'DELETE'],
+        allowHeaders: ['Content-Type', 'Authorization'],
       },
     });
 
-    // Configuración común para integraciones Lambda
-    const lambdaIntegrationOptions = {
+    // Configuración mejorada de la integración Lambda
+    const integration = new apigateway.LambdaIntegration(crudGuestLambda, {
       proxy: true,
       integrationResponses: [
         {
-          statusCode: '200',
+          statusCode: "200",
           responseParameters: {
             'method.response.header.Access-Control-Allow-Origin': "'*'",
-            'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With'",
-            'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE,PATCH'",
-          },
-        },
+          }
+        }
       ],
-    };
+    });
 
-    const methodOptions = {
+    // Rutas y métodos
+    const guestsResource = api.root.addResource('guest');
+    const guestIdResource = guestsResource.addResource('{guest_id}');
+
+    // Métodos con respuestas configuradas
+    guestsResource.addMethod('POST', integration, {
       methodResponses: [
         {
-          statusCode: '200',
+          statusCode: "200",
           responseParameters: {
             'method.response.header.Access-Control-Allow-Origin': true,
-            'method.response.header.Access-Control-Allow-Headers': true,
-            'method.response.header.Access-Control-Allow-Methods': true,
-          },
-        },
-      ],
-    };
+          }
+        }
+      ]
+    });
 
-    // Integración de recursos
-    const guestsResource = api.root.addResource('guest');
-    guestsResource.addMethod(
-      'POST', 
-      new apigateway.LambdaIntegration(createGuestLambda, lambdaIntegrationOptions),
-      methodOptions
-    );
-    guestsResource.addMethod(
-      'GET',
-      new apigateway.LambdaIntegration(getGuestsLambda, lambdaIntegrationOptions),
-      methodOptions
-    );
+    guestsResource.addMethod('GET', integration, {
+      methodResponses: [
+        {
+          statusCode: "200",
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Origin': true,
+          }
+        }
+      ]
+    });
 
-    const guestIdResource = guestsResource.addResource('{guest_id}');
-    guestIdResource.addMethod(
-      'GET',
-      new apigateway.LambdaIntegration(getOneGuestLambda, lambdaIntegrationOptions),
-      methodOptions
-    );
-    guestIdResource.addMethod(
-      'PUT',
-      new apigateway.LambdaIntegration(updateGuestLambda, lambdaIntegrationOptions),
-      methodOptions
-    );
-    guestIdResource.addMethod(
-      'DELETE',
-      new apigateway.LambdaIntegration(deleteGuestLambda, lambdaIntegrationOptions),
-      methodOptions
-    );
+    guestIdResource.addMethod('GET', integration, {
+      methodResponses: [
+        {
+          statusCode: "200",
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Origin': true,
+          }
+        }
+      ]
+    });
+
+    guestIdResource.addMethod('PUT', integration, {
+      methodResponses: [
+        {
+          statusCode: "200",
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Origin': true,
+          }
+        }
+      ]
+    });
+
+    guestIdResource.addMethod('DELETE', integration, {
+      methodResponses: [
+        {
+          statusCode: "200",
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Origin': true,
+          }
+        }
+      ]
+    });
   }
 }
