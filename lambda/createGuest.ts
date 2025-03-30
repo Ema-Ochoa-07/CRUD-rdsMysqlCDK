@@ -10,19 +10,22 @@ interface GuestRequest {
   email?: string;
   phone?: string;
   emergencyPhone?: string;
-  customer_id?: string;
-  room_id?: string;
+  reservation_id?: string;
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Credentials': true,
+  'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With',
+  'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PUT,DELETE,PATCH',
+};
+
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  // Handle OPTIONS request
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: {
-        "Access-Control-Allow-Origin": '*',
-        "Access-Control-Allow-Methods": "OPTIONS, POST",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
+      headers: CORS_HEADERS,
       body: JSON.stringify({}),
     };
   }
@@ -30,11 +33,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      headers: {
-        "Access-Control-Allow-Origin": '*',
-        "Access-Control-Allow-Methods": "OPTIONS, POST",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
+      headers: CORS_HEADERS,
       body: JSON.stringify({ error: `Method ${event.httpMethod} not allowed` }),
     };
   }
@@ -42,11 +41,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   if (!event.body) {
     return {
       statusCode: 400,
-      headers: {
-        "Access-Control-Allow-Origin": '*',
-        "Access-Control-Allow-Methods": "OPTIONS, POST",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
+      headers: CORS_HEADERS,
       body: JSON.stringify({ error: 'Request body is empty' }),
     };
   }
@@ -61,11 +56,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (missingFields.length > 0) {
       return {
         statusCode: 400,
-        headers: {
-          "Access-Control-Allow-Origin": '*',
-          "Access-Control-Allow-Methods": "OPTIONS, POST",
-          "Access-Control-Allow-Headers": "Content-Type",
-        },
+        headers: CORS_HEADERS,
         body: JSON.stringify({ 
           error: 'Missing required fields',
           missingFields 
@@ -87,12 +78,11 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
       await connection.execute(
         `INSERT INTO guest 
-          (guest_id, customer_id, room_id, name, lastname, identificationType, identificationNumber, phone, emergencyPhone)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (guest_id, reservation_id, name, lastname, identificationType, identificationNumber, phone, emergencyPhone)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           guest_id,
-          requestData.customer_id || null, 
-          requestData.room_id || null,
+          requestData.reservation_id || null, 
           requestData.name,
           requestData.lastname,
           requestData.identificationType,
@@ -104,16 +94,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
       return {
         statusCode: 201,
-        headers: {
-          "Access-Control-Allow-Origin": '*',
-          "Access-Control-Allow-Methods": "OPTIONS, POST",
-          "Access-Control-Allow-Headers": "Content-Type",
-        },
+        headers: CORS_HEADERS,
         body: JSON.stringify({
-          success: true,
           guest_id,
-          customer_id: requestData.customer_id || 'No proporcionado',
-          room_id: requestData.room_id || 'No proporcionado',
+          reservation_id: requestData.reservation_id || null,
           name: requestData.name,
           lastname: requestData.lastname,
           identificationType: requestData.identificationType,
@@ -139,11 +123,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     return {
       statusCode,
-      headers: {
-        "Access-Control-Allow-Origin": '*',
-        "Access-Control-Allow-Methods": "OPTIONS, POST",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
+      headers: CORS_HEADERS,
       body: JSON.stringify({ 
         error: errorMessage,
         ...(process.env.NODE_ENV === 'development' && error instanceof Error 

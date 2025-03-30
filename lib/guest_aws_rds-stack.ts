@@ -65,24 +65,81 @@ export class GuestAwsRdsStack extends cdk.Stack {
       lambda.addToRolePolicy(lambdaPolicy);
     });
 
-    // 4. API Gateway con CORS habilitado automáticamente
+    // 4. API Gateway con CORS habilitado
     const api = new apigateway.RestApi(this, 'GuestApi', {
       restApiName: 'guest-api',
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'X-Amz-Date', 'Authorization', 'X-Api-Key'],
+        allowMethods: ['OPTIONS', 'GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Requested-With'
+        ],
+        allowCredentials: true,
+        statusCode: 200,
       },
     });
 
-    // Integrar Lambda con API Gateway
+    // Configuración común para integraciones Lambda
+    const lambdaIntegrationOptions = {
+      proxy: true,
+      integrationResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Origin': "'*'",
+            'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Requested-With'",
+            'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE,PATCH'",
+          },
+        },
+      ],
+    };
+
+    const methodOptions = {
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Access-Control-Allow-Origin': true,
+            'method.response.header.Access-Control-Allow-Headers': true,
+            'method.response.header.Access-Control-Allow-Methods': true,
+          },
+        },
+      ],
+    };
+
+    // Integración de recursos
     const guestsResource = api.root.addResource('guest');
-    guestsResource.addMethod('POST', new apigateway.LambdaIntegration(createGuestLambda));
-    guestsResource.addMethod('GET', new apigateway.LambdaIntegration(getGuestsLambda));
+    guestsResource.addMethod(
+      'POST', 
+      new apigateway.LambdaIntegration(createGuestLambda, lambdaIntegrationOptions),
+      methodOptions
+    );
+    guestsResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(getGuestsLambda, lambdaIntegrationOptions),
+      methodOptions
+    );
 
     const guestIdResource = guestsResource.addResource('{guest_id}');
-    guestIdResource.addMethod('GET', new apigateway.LambdaIntegration(getOneGuestLambda));
-    guestIdResource.addMethod('PUT', new apigateway.LambdaIntegration(updateGuestLambda));
-    guestIdResource.addMethod('DELETE', new apigateway.LambdaIntegration(deleteGuestLambda));
+    guestIdResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(getOneGuestLambda, lambdaIntegrationOptions),
+      methodOptions
+    );
+    guestIdResource.addMethod(
+      'PUT',
+      new apigateway.LambdaIntegration(updateGuestLambda, lambdaIntegrationOptions),
+      methodOptions
+    );
+    guestIdResource.addMethod(
+      'DELETE',
+      new apigateway.LambdaIntegration(deleteGuestLambda, lambdaIntegrationOptions),
+      methodOptions
+    );
   }
 }
